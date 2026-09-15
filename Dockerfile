@@ -3,11 +3,14 @@
 # ==========================================
 
 # ----------------- Stage 1: Builder -----------------
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Install build dependencies
+# Install build dependencies for native C++ addons (better-sqlite3)
+RUN apk add --no-cache python3 make g++
+
+# Install all dependencies
 COPY package*.json ./
 RUN npm ci
 
@@ -19,25 +22,31 @@ COPY src/ ./src/
 RUN npm run build
 
 # ----------------- Stage 2: Production Runner -----------------
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-# Security: run as non-root user
-USER node
+# Install build tools for native modules
+RUN apk add --no-cache python3 make g++
 
 # Set production environment
 ENV NODE_ENV=production
 ENV PORT=3000
 
 # Copy package files and install only production dependencies
-COPY --chown=node:node package*.json ./
+COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
-# Copy built application and assets from builder stage
-COPY --chown=node:node --from=builder /app/dist ./dist
-COPY --chown=node:node src/model/schema.sql ./dist/model/schema.sql
-COPY --chown=node:node src/model/schema.postgres.sql ./dist/model/schema.postgres.sql
+# Copy built application and schema assets from builder stage
+COPY --from=builder /app/dist ./dist
+COPY src/model/schema.sql ./dist/model/schema.sql
+COPY src/model/schema.postgres.sql ./dist/model/schema.postgres.sql
+
+# Set ownership of all files to the non-root 'node' user
+RUN chown -R node:node /app
+
+# Switch to non-root user for runtime security
+USER node
 
 # Expose API port
 EXPOSE 3000
