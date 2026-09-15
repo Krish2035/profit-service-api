@@ -1,0 +1,7 @@
+node_modules/
+dist/
+profit_service.db*
+*.db
+*.db-shm
+*.db-wal
+.env
